@@ -318,10 +318,11 @@ def get_top_cves(limit: int = 20) -> List[dict]:
 
 
 def get_severity_distribution(hours_back: int = 24,
-                              attack_type: str = None) -> List[dict]:
+                              attack_type: str = None,
+                              severity: str = None) -> List[dict]:
     """Severity breakdown for donut chart."""
     pipeline = [
-        {"$match": _match(hours_back, attack_type)},
+        {"$match": _match(hours_back, attack_type, severity)},
         {"$group": {"_id": "$severity", "count": {"$sum": 1}}},
         {"$project": {"severity": "$_id", "count": 1, "_id": 0}},
         {"$sort": {"count": -1}}

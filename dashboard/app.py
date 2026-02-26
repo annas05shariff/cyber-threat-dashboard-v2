@@ -492,7 +492,7 @@ def load_data(n_intervals, n_clicks, hours, attack_type, severity):
         attack_raw      = get_attack_type_counts(hours_back=hours, severity=sv)
         mitre_raw       = get_mitre_technique_counts(hours_back=hours, attack_type=at, severity=sv)
         cves_raw        = get_top_cves(limit=25)
-        severity_raw    = get_severity_distribution(hours_back=hours, attack_type=at)
+        severity_raw    = get_severity_distribution(hours_back=hours, attack_type=at, severity=sv)
         total_count     = get_event_count(hours_back=hours, attack_type=at, severity=sv)
 
         ts = datetime.utcnow().strftime("Updated %H:%M:%S UTC")
