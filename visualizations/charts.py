@@ -483,6 +483,42 @@ def build_cve_chart(cve_data: List[dict], top_n: int = 20) -> go.Figure:
 # MODULE 2 — CHART 8: Multi-Attack Trend (stacked area)
 # ══════════════════════════════════════════════════════════════════════════════
 
+def build_stacked_trend_from_hourly(hourly_type_data: List[dict]) -> go.Figure:
+    """
+    Stacked area chart built from pre-aggregated hourly-by-type data.
+    Much more accurate than using raw events (no 500-event cap).
+    Input: [{"hour": "2026-02-25T14", "attack_type": "DDoS", "count": 5}, ...]
+    """
+    if not hourly_type_data:
+        return _empty_fig("No trend data")
+
+    df = pd.DataFrame(hourly_type_data)
+    if "hour" not in df.columns or "attack_type" not in df.columns:
+        return _empty_fig("Missing required fields")
+
+    df["hour"] = pd.to_datetime(df["hour"], format="%Y-%m-%dT%H", errors="coerce")
+    df = df.dropna(subset=["hour"])
+    pivot = df.pivot_table(index="hour", columns="attack_type", values="count", aggfunc="sum", fill_value=0)
+
+    fig = go.Figure()
+    for attack_type in pivot.columns:
+        color = COLORS.get(attack_type, COLORS["Unknown"])
+        fill  = color.replace(")", ", 0.6)").replace("rgb", "rgba") if color.startswith("rgb") else color
+        fig.add_trace(go.Scatter(
+            x             = pivot.index,
+            y             = pivot[attack_type],
+            mode          = "lines",
+            name          = attack_type,
+            stackgroup    = "one",
+            line          = dict(width=0.5, color=color),
+            fillcolor     = fill,
+            hovertemplate = f"<b>{attack_type}</b><br>%{{x|%b %d %H:00}}<br>Count: %{{y}}<extra></extra>",
+        ))
+
+    fig.update_layout(legend=dict(orientation="h", y=1.15, font=dict(size=9)))
+    return _apply_base(fig, "Attack Volume by Type Over Time (Stacked)")
+
+
 def build_stacked_trend(events_data: List[dict]) -> go.Figure:
     """
     Stacked area chart: attack volume per type over the last 24h.

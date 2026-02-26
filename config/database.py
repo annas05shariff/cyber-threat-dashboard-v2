@@ -172,6 +172,44 @@ def get_recent_events(limit: int = 100, hours_back: int = 24) -> List[dict]:
     return docs
 
 
+def get_event_count(hours_back: int = 24) -> int:
+    """Fast count of total events in the time window — used for KPI total."""
+    cutoff = datetime.utcnow() - timedelta(hours=hours_back)
+    return get_db()[COLLECTION_EVENTS].count_documents(
+        {"timestamp": {"$gte": cutoff.isoformat()}}
+    )
+
+
+def get_hourly_counts_by_type(hours_back: int = 48) -> List[dict]:
+    """
+    Stacked trend data: attack counts bucketed by hour AND attack type.
+    Returns: [{"hour": "2026-02-24T10", "attack_type": "DDoS", "count": 5}, ...]
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=hours_back)
+    pipeline = [
+        {"$match": {"timestamp": {"$gte": cutoff.isoformat()}}},
+        {
+            "$group": {
+                "_id": {
+                    "hour":        {"$substr": ["$timestamp", 0, 13]},
+                    "attack_type": "$attack_type"
+                },
+                "count": {"$sum": 1}
+            }
+        },
+        {
+            "$project": {
+                "hour":        "$_id.hour",
+                "attack_type": "$_id.attack_type",
+                "count":       1,
+                "_id":         0
+            }
+        },
+        {"$sort": {"hour": 1}}
+    ]
+    return list(get_db()[COLLECTION_EVENTS].aggregate(pipeline))
+
+
 def get_attack_type_counts(hours_back: int = 24) -> List[dict]:
     """
     Aggregate attack counts by type for pie / bar charts.

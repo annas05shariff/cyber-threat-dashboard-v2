@@ -38,15 +38,17 @@ from config.settings import (
 )
 from config.database import (
     get_recent_events, get_attack_type_counts,
-    get_hourly_counts, get_country_counts,
-    get_mitre_technique_counts, get_top_cves,
-    get_severity_distribution, ensure_indexes
+    get_hourly_counts, get_hourly_counts_by_type,
+    get_country_counts, get_mitre_technique_counts,
+    get_top_cves, get_severity_distribution,
+    get_event_count, ensure_indexes
 )
 from visualizations.charts import (
     build_timeseries_chart, build_attack_type_bar,
     build_severity_donut, build_cve_chart,
-    build_stacked_trend, build_severity_heatmap,
-    build_top_countries_bar, compute_kpi_stats,
+    build_stacked_trend, build_stacked_trend_from_hourly,
+    build_severity_heatmap, build_top_countries_bar,
+    compute_kpi_stats,
 )
 from visualizations.geo_charts import (
     build_choropleth_map, build_scatter_geo_map,
@@ -347,10 +349,12 @@ app.layout = html.Div([
     dcc.Store(id="store-events"),
     dcc.Store(id="store-country"),
     dcc.Store(id="store-hourly"),
+    dcc.Store(id="store-hourly-by-type"),
     dcc.Store(id="store-attack-counts"),
     dcc.Store(id="store-mitre"),
     dcc.Store(id="store-cves"),
     dcc.Store(id="store-severity"),
+    dcc.Store(id="store-total-count"),
 
     # Header
     html.Div([
@@ -460,47 +464,52 @@ def _tab_selected_style():
 
 # 1. Load data into stores when filter changes or auto-refresh fires
 @app.callback(
-    Output("store-events",        "data"),
-    Output("store-country",       "data"),
-    Output("store-hourly",        "data"),
-    Output("store-attack-counts", "data"),
-    Output("store-mitre",         "data"),
-    Output("store-cves",          "data"),
-    Output("store-severity",      "data"),
-    Output("last-update",         "children"),
-    Input("auto-refresh",         "n_intervals"),
-    Input("btn-refresh",          "n_clicks"),
-    Input("filter-hours",         "value"),
-    Input("filter-attack-type",   "value"),
-    Input("filter-severity",      "value"),
+    Output("store-events",          "data"),
+    Output("store-country",         "data"),
+    Output("store-hourly",          "data"),
+    Output("store-hourly-by-type",  "data"),
+    Output("store-attack-counts",   "data"),
+    Output("store-mitre",           "data"),
+    Output("store-cves",            "data"),
+    Output("store-severity",        "data"),
+    Output("store-total-count",     "data"),
+    Output("last-update",           "children"),
+    Input("auto-refresh",           "n_intervals"),
+    Input("btn-refresh",            "n_clicks"),
+    Input("filter-hours",           "value"),
+    Input("filter-attack-type",     "value"),
+    Input("filter-severity",        "value"),
 )
 def load_data(n_intervals, n_clicks, hours, attack_type, severity):
     from datetime import datetime
     try:
-        events_raw    = get_recent_events(limit=500, hours_back=hours)
-        country_raw   = get_country_counts(hours_back=hours)
-        hourly_raw    = get_hourly_counts(hours_back=hours)
-        attack_raw    = get_attack_type_counts(hours_back=hours)
-        mitre_raw     = get_mitre_technique_counts(hours_back=hours)
-        cves_raw      = get_top_cves(limit=25)
-        severity_raw  = get_severity_distribution(hours_back=hours)
+        events_raw       = get_recent_events(limit=500, hours_back=hours)
+        country_raw      = get_country_counts(hours_back=hours)
+        hourly_raw       = get_hourly_counts(hours_back=hours)
+        hourly_type_raw  = get_hourly_counts_by_type(hours_back=hours)
+        attack_raw       = get_attack_type_counts(hours_back=hours)
+        mitre_raw        = get_mitre_technique_counts(hours_back=hours)
+        cves_raw         = get_top_cves(limit=25)
+        severity_raw     = get_severity_distribution(hours_back=hours)
+        total_count      = get_event_count(hours_back=hours)
 
         # Apply attack type filter
         if attack_type and attack_type != "all":
-            events_raw  = [e for e in events_raw  if e.get("attack_type") == attack_type]
-            attack_raw  = [a for a in attack_raw  if a.get("attack_type") == attack_type]
-            country_raw = [c for c in country_raw]  # keep country data unfiltered for map
+            events_raw      = [e for e in events_raw      if e.get("attack_type") == attack_type]
+            attack_raw      = [a for a in attack_raw      if a.get("attack_type") == attack_type]
+            hourly_type_raw = [h for h in hourly_type_raw if h.get("attack_type") == attack_type]
 
         # Apply severity filter
         if severity and severity != "all":
             events_raw = [e for e in events_raw if e.get("severity") == severity]
 
         ts = datetime.utcnow().strftime("Updated %H:%M:%S UTC")
-        return events_raw, country_raw, hourly_raw, attack_raw, mitre_raw, cves_raw, severity_raw, ts
+        return (events_raw, country_raw, hourly_raw, hourly_type_raw,
+                attack_raw, mitre_raw, cves_raw, severity_raw, total_count, ts)
 
     except Exception as e:
         logger.error(f"Data load failed: {e}")
-        return [], [], [], [], [], [], [], f"Error: {str(e)[:40]}"
+        return [], [], [], [], [], [], [], [], 0, f"Error: {str(e)[:40]}"
 
 
 # 2. (Tab content is pre-rendered inline in dcc.Tabs — no dynamic render callback needed)
@@ -514,18 +523,23 @@ def load_data(n_intervals, n_clicks, hours, attack_type, severity):
     Output("kpi-countries", "children"),
     Output("kpi-avg-sev",   "children"),
     Output("kpi-top-type",  "children"),
-    Input("store-events",   "data"),
-    Input("store-country",  "data"),
+    Input("store-events",       "data"),
+    Input("store-country",      "data"),
+    Input("store-total-count",  "data"),
+    Input("store-severity",     "data"),
 )
-def update_kpis(events, country_data):
-    if not events:
-        return "0", "0", "0", "0", "0.0", "N/A"
-    kpi = compute_kpi_stats(events)
+def update_kpis(events, country_data, total_count, severity_data):
+    kpi = compute_kpi_stats(events or [])
+    # Use real total from DB count (not the 500-event capped list)
+    real_total = total_count if total_count else kpi["total_events"]
     country_count = len(country_data) if country_data else kpi["unique_countries"]
+    # Critical count from severity aggregation (accurate, not capped)
+    critical_count = next((s["count"] for s in (severity_data or []) if s.get("severity") == "Critical"), kpi["critical_count"])
+    high_count     = next((s["count"] for s in (severity_data or []) if s.get("severity") == "High"),     0)
     return (
-        f"{kpi['total_events']:,}",
-        str(kpi["critical_count"]),
-        str(sum(1 for e in events if e.get("severity") == "High")),
+        f"{real_total:,}",
+        str(critical_count),
+        str(high_count),
         str(country_count),
         str(kpi["avg_severity"]),
         kpi["top_attack_type"],
@@ -539,19 +553,19 @@ def update_kpis(events, country_data):
     Output("chart-severity-donut","figure"),
     Output("chart-countries-bar","figure"),
     Output("chart-stacked-trend","figure"),
-    Input("store-hourly",        "data"),
-    Input("store-attack-counts", "data"),
-    Input("store-severity",      "data"),
-    Input("store-country",       "data"),
-    Input("store-events",        "data"),
+    Input("store-hourly",           "data"),
+    Input("store-attack-counts",    "data"),
+    Input("store-severity",         "data"),
+    Input("store-country",          "data"),
+    Input("store-hourly-by-type",   "data"),
 )
-def update_overview_charts(hourly, attack_counts, severity, country, events):
+def update_overview_charts(hourly, attack_counts, severity, country, hourly_by_type):
     return (
         build_timeseries_chart(hourly or []),
         build_attack_type_bar(attack_counts or []),
         build_severity_donut(severity or []),
         build_top_countries_bar(country or []),
-        build_stacked_trend(events or []),
+        build_stacked_trend_from_hourly(hourly_by_type or []),
     )
 
 
