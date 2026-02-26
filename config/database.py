@@ -21,6 +21,21 @@ from config.schema import ThreatEvent, CVEEvent
 logger = logging.getLogger(__name__)
 
 
+# ── Filter helper ───────────────────────────────────────────────────────────────
+
+def _match(hours_back: int,
+           attack_type: Optional[str] = None,
+           severity: Optional[str] = None) -> dict:
+    """Build a MongoDB $match dict with optional attack_type and severity filters."""
+    cutoff = datetime.utcnow() - timedelta(hours=hours_back)
+    q: dict = {"timestamp": {"$gte": cutoff.isoformat()}}
+    if attack_type and attack_type != "all":
+        q["attack_type"] = attack_type
+    if severity and severity != "all":
+        q["severity"] = severity
+    return q
+
+
 # ── Connection ──────────────────────────────────────────────────────────────────
 
 _client: Optional[MongoClient] = None
@@ -156,68 +171,50 @@ def upsert_cve_events(cves: List[CVEEvent]) -> Dict[str, int]:
 
 # ── Dashboard Query Helpers ─────────────────────────────────────────────────────
 
-def get_recent_events(limit: int = 100, hours_back: int = 24) -> List[dict]:
+def get_recent_events(limit: int = 100, hours_back: int = 24,
+                      attack_type: str = None, severity: str = None) -> List[dict]:
     """Fetch the most recent threat events for the live feed panel."""
-    cutoff = datetime.utcnow() - timedelta(hours=hours_back)
     collection = get_db()[COLLECTION_EVENTS]
     cursor = (
         collection
-        .find({"timestamp": {"$gte": cutoff.isoformat()}})
+        .find(_match(hours_back, attack_type, severity))
         .sort("timestamp", DESCENDING)
         .limit(limit)
     )
     docs = list(cursor)
     for d in docs:
-        d.pop("_id", None)   # remove MongoDB ObjectId before serializing
+        d.pop("_id", None)
     return docs
 
 
-def get_event_count(hours_back: int = 24) -> int:
+def get_event_count(hours_back: int = 24,
+                    attack_type: str = None, severity: str = None) -> int:
     """Fast count of total events in the time window — used for KPI total."""
-    cutoff = datetime.utcnow() - timedelta(hours=hours_back)
     return get_db()[COLLECTION_EVENTS].count_documents(
-        {"timestamp": {"$gte": cutoff.isoformat()}}
+        _match(hours_back, attack_type, severity)
     )
 
 
-def get_hourly_counts_by_type(hours_back: int = 48) -> List[dict]:
-    """
-    Stacked trend data: attack counts bucketed by hour AND attack type.
-    Returns: [{"hour": "2026-02-24T10", "attack_type": "DDoS", "count": 5}, ...]
-    """
-    cutoff = datetime.utcnow() - timedelta(hours=hours_back)
+def get_hourly_counts_by_type(hours_back: int = 48,
+                               attack_type: str = None, severity: str = None) -> List[dict]:
+    """Stacked trend data: attack counts bucketed by hour AND attack type."""
     pipeline = [
-        {"$match": {"timestamp": {"$gte": cutoff.isoformat()}}},
-        {
-            "$group": {
-                "_id": {
-                    "hour":        {"$substr": ["$timestamp", 0, 13]},
-                    "attack_type": "$attack_type"
-                },
-                "count": {"$sum": 1}
-            }
-        },
-        {
-            "$project": {
-                "hour":        "$_id.hour",
-                "attack_type": "$_id.attack_type",
-                "count":       1,
-                "_id":         0
-            }
-        },
+        {"$match": _match(hours_back, attack_type, severity)},
+        {"$group": {
+            "_id":   {"hour": {"$substr": ["$timestamp", 0, 13]}, "attack_type": "$attack_type"},
+            "count": {"$sum": 1}
+        }},
+        {"$project": {"hour": "$_id.hour", "attack_type": "$_id.attack_type", "count": 1, "_id": 0}},
         {"$sort": {"hour": 1}}
     ]
     return list(get_db()[COLLECTION_EVENTS].aggregate(pipeline))
 
 
-def get_attack_type_counts(hours_back: int = 24) -> List[dict]:
-    """
-    Aggregate attack counts by type for pie / bar charts.
-    Returns: [{"attack_type": "DDoS", "count": 42}, ...]
-    """
-    cutoff = datetime.utcnow() - timedelta(hours=hours_back)
+def get_attack_type_counts(hours_back: int = 24,
+                           severity: str = None) -> List[dict]:
+    """Aggregate attack counts by type for bar charts."""
     pipeline = [
-        {"$match": {"timestamp": {"$gte": cutoff.isoformat()}}},
+        {"$match": _match(hours_back, severity=severity)},
         {"$group": {"_id": "$attack_type", "count": {"$sum": 1}}},
         {"$project": {"attack_type": "$_id", "count": 1, "_id": 0}},
         {"$sort": {"count": -1}}
@@ -225,41 +222,30 @@ def get_attack_type_counts(hours_back: int = 24) -> List[dict]:
     return list(get_db()[COLLECTION_EVENTS].aggregate(pipeline))
 
 
-def get_hourly_counts(hours_back: int = 48) -> List[dict]:
-    """
-    Time-series data: attack counts bucketed by hour.
-    Returns: [{"hour": "2026-02-24T10:00", "count": 17, "avg_severity": 6.2}, ...]
-    """
-    cutoff = datetime.utcnow() - timedelta(hours=hours_back)
+def get_hourly_counts(hours_back: int = 48,
+                      attack_type: str = None, severity: str = None) -> List[dict]:
+    """Time-series data: attack counts bucketed by hour."""
     pipeline = [
-        {"$match": {"timestamp": {"$gte": cutoff.isoformat()}}},
-        {
-            "$group": {
-                "_id": {
-                    "$substr": ["$timestamp", 0, 13]   # "2026-02-24T10"
-                },
-                "count":        {"$sum": 1},
-                "avg_severity": {"$avg": "$severity_score"},
-                "max_severity": {"$max": "$severity_score"},
-            }
-        },
+        {"$match": _match(hours_back, attack_type, severity)},
+        {"$group": {
+            "_id":          {"$substr": ["$timestamp", 0, 13]},
+            "count":        {"$sum": 1},
+            "avg_severity": {"$avg": "$severity_score"},
+            "max_severity": {"$max": "$severity_score"},
+        }},
         {"$project": {"hour": "$_id", "count": 1, "avg_severity": 1, "max_severity": 1, "_id": 0}},
         {"$sort": {"hour": 1}}
     ]
     return list(get_db()[COLLECTION_EVENTS].aggregate(pipeline))
 
 
-def get_country_counts(hours_back: int = 24) -> List[dict]:
-    """
-    Geo data for choropleth map.
-    Returns: [{"country": "Russia", "country_code": "RU", "count": 120, "avg_severity": 7.1}, ...]
-    """
-    cutoff = datetime.utcnow() - timedelta(hours=hours_back)
+def get_country_counts(hours_back: int = 24,
+                       attack_type: str = None, severity: str = None) -> List[dict]:
+    """Geo data for choropleth map."""
+    base = _match(hours_back, attack_type, severity)
+    base["source_geo.country_code"] = {"$ne": None}
     pipeline = [
-        {"$match": {
-            "timestamp": {"$gte": cutoff.isoformat()},
-            "source_geo.country_code": {"$ne": None}
-        }},
+        {"$match": base},
         {
             "$group": {
                 "_id": {
@@ -285,17 +271,13 @@ def get_country_counts(hours_back: int = 24) -> List[dict]:
     return list(get_db()[COLLECTION_EVENTS].aggregate(pipeline))
 
 
-def get_mitre_technique_counts(hours_back: int = 168) -> List[dict]:
-    """
-    MITRE ATT&CK technique distribution for treemap / sunburst.
-    Returns: [{"tactic": "Initial Access", "technique": "T1190", "count": 33}, ...]
-    """
-    cutoff = datetime.utcnow() - timedelta(hours=hours_back)
+def get_mitre_technique_counts(hours_back: int = 168,
+                               attack_type: str = None, severity: str = None) -> List[dict]:
+    """MITRE ATT&CK technique distribution for treemap / sunburst."""
+    base = _match(hours_back, attack_type, severity)
+    base["mitre.tactic"] = {"$ne": None}
     pipeline = [
-        {"$match": {
-            "timestamp":       {"$gte": cutoff.isoformat()},
-            "mitre.tactic":    {"$ne": None}
-        }},
+        {"$match": base},
         {
             "$group": {
                 "_id": {
@@ -335,11 +317,11 @@ def get_top_cves(limit: int = 20) -> List[dict]:
     return docs
 
 
-def get_severity_distribution(hours_back: int = 24) -> List[dict]:
+def get_severity_distribution(hours_back: int = 24,
+                              attack_type: str = None) -> List[dict]:
     """Severity breakdown for donut chart."""
-    cutoff = datetime.utcnow() - timedelta(hours=hours_back)
     pipeline = [
-        {"$match": {"timestamp": {"$gte": cutoff.isoformat()}}},
+        {"$match": _match(hours_back, attack_type)},
         {"$group": {"_id": "$severity", "count": {"$sum": 1}}},
         {"$project": {"severity": "$_id", "count": 1, "_id": 0}},
         {"$sort": {"count": -1}}
