@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venv/bin/python:*)",
+      "Bash(curl:*)",
+      "Bash(pgrep:*)",
+      "Bash(venv/bin/python3:*)",
+      "Bash(git init:*)",
+      "Bash(git config:*)",
+      "Bash(git add:*)",
+      "Bash(git rm:*)"
+    ]
+  }
+}

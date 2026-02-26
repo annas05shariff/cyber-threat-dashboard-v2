@@ -1,0 +1,146 @@
+/* ── Alert Toast Container ───────────────────────────────────────────────────── */
+
+#alert-toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column-reverse;   /* newest toast appears at bottom */
+  gap: 10px;
+  pointer-events: none;             /* container itself is click-through */
+  max-width: 380px;
+  width: 100%;
+}
+
+/* ── Individual Toast ────────────────────────────────────────────────────────── */
+
+.alert-toast {
+  pointer-events: auto;
+  background: #0f1117;
+  border: 1px solid #1e2130;
+  border-left: 4px solid #ff2d55;   /* overridden per-severity via JS */
+  border-radius: 6px;
+  padding: 12px 14px 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255,255,255,0.04);
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  color: #c8d0e0;
+  position: relative;
+  overflow: hidden;
+
+  /* Start hidden — JS adds .alert-toast--visible to trigger slide-in */
+  opacity: 0;
+  transform: translateX(110%);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.alert-toast--visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.alert-toast--hiding {
+  opacity: 0;
+  transform: translateX(110%);
+}
+
+/* ── Header Row ──────────────────────────────────────────────────────────────── */
+
+.alert-toast-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+}
+
+.alert-toast-icon {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.alert-toast-title {
+  flex: 1;
+  font-weight: 700;
+  font-size: 13px;
+  color: #e8eaf0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.02em;
+}
+
+.alert-toast-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  color: #000;
+}
+
+.alert-toast-close {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: #5a6070;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  margin-left: 2px;
+  transition: color 0.15s;
+}
+
+.alert-toast-close:hover {
+  color: #c8d0e0;
+}
+
+/* ── Body ────────────────────────────────────────────────────────────────────── */
+
+.alert-toast-body {
+  font-size: 12px;
+  color: #8892a4;
+  line-height: 1.5;
+  word-break: break-word;
+  margin-bottom: 6px;
+  max-height: 60px;
+  overflow: hidden;
+}
+
+/* ── Timestamp ───────────────────────────────────────────────────────────────── */
+
+.alert-toast-time {
+  font-size: 10px;
+  color: #3e4560;
+  letter-spacing: 0.04em;
+  text-align: right;
+  margin-bottom: 4px;
+}
+
+/* ── Progress Bar ────────────────────────────────────────────────────────────── */
+
+.alert-toast-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 0 0 6px 6px;
+  /* width animates to 0 via JS — shows remaining time */
+}
+
+/* ── Responsive: smaller toasts on mobile ────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  #alert-toast-container {
+    bottom: 12px;
+    right: 12px;
+    left: 12px;
+    max-width: none;
+  }
+}

@@ -1,0 +1,113 @@
+/* ── Dash dcc.Dropdown full dark theme ───────────────────────────────────────
+   Dash uses React-Select v1 class names. We need high-specificity selectors
+   + !important to beat the bundled dash CSS.
+── */
+
+/* ── Control box ─────────────────────────────────────────────────────────── */
+.dash-dropdown .Select-control,
+.dash-dropdown.Select--single .Select-control,
+.dash-dropdown.Select--multi .Select-control {
+  background-color: #0a1520 !important;
+  border: 1px solid #1a4a6a !important;
+  border-radius: 4px !important;
+  color: #c8e6f5 !important;
+  box-shadow: none !important;
+}
+.dash-dropdown .Select-control:hover {
+  border-color: #00d4ff !important;
+  box-shadow: 0 0 0 1px rgba(0,212,255,0.2) !important;
+}
+.dash-dropdown.is-open .Select-control {
+  background-color: #0a1520 !important;
+  border-color: #00d4ff !important;
+  border-bottom-color: #0a1520 !important;
+  border-radius: 4px 4px 0 0 !important;
+}
+
+/* ── Selected value & placeholder ────────────────────────────────────────── */
+.dash-dropdown .Select-value-label,
+.dash-dropdown .Select-value,
+.dash-dropdown .Select--single .Select-value .Select-value-label {
+  color: #c8e6f5 !important;
+}
+.dash-dropdown .Select-placeholder {
+  color: #4a7090 !important;
+}
+.dash-dropdown .Select-input > input {
+  color: #c8e6f5 !important;
+  background: transparent !important;
+  font-family: 'Courier New', monospace !important;
+}
+
+/* ── Arrow ────────────────────────────────────────────────────────────────── */
+.dash-dropdown .Select-arrow {
+  border-color: #4a90b0 transparent transparent !important;
+}
+.dash-dropdown.is-open .Select-arrow,
+.dash-dropdown .Select-arrow-zone:hover .Select-arrow {
+  border-color: #00d4ff transparent transparent !important;
+}
+
+/* ── Dropdown popup menu ─────────────────────────────────────────────────── */
+.dash-dropdown .Select-menu-outer {
+  background-color: #0a1928 !important;
+  border: 1px solid #1a4a6a !important;
+  border-top: none !important;
+  border-radius: 0 0 4px 4px !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.85) !important;
+  z-index: 9999 !important;
+  margin-top: -1px !important;
+}
+.dash-dropdown .Select-menu {
+  background-color: #0a1928 !important;
+  max-height: 220px !important;
+}
+
+/* ── Option rows ─────────────────────────────────────────────────────────── */
+.dash-dropdown .Select-option {
+  background-color: #0a1928 !important;
+  color: #a8cce0 !important;
+  font-family: 'Courier New', monospace !important;
+  font-size: 13px !important;
+  padding: 9px 14px !important;
+  border-bottom: 1px solid rgba(255,255,255,0.04) !important;
+  cursor: pointer !important;
+}
+.dash-dropdown .Select-option:last-child {
+  border-bottom: none !important;
+}
+.dash-dropdown .Select-option.is-focused {
+  background-color: #0f2d45 !important;
+  color: #00d4ff !important;
+}
+.dash-dropdown .Select-option.is-selected {
+  background-color: rgba(0,212,255,0.1) !important;
+  color: #00d4ff !important;
+  font-weight: 600 !important;
+}
+.dash-dropdown .Select-option.is-disabled {
+  color: #2a4050 !important;
+}
+
+/* ── No results ──────────────────────────────────────────────────────────── */
+.dash-dropdown .Select-noresults {
+  background-color: #0a1928 !important;
+  color: #4a7090 !important;
+  padding: 10px 14px !important;
+  font-size: 13px !important;
+}
+
+/* ── Scrollbar inside menu ───────────────────────────────────────────────── */
+.dash-dropdown .Select-menu::-webkit-scrollbar {
+  width: 4px;
+}
+.dash-dropdown .Select-menu::-webkit-scrollbar-track {
+  background: #0a1928;
+}
+.dash-dropdown .Select-menu::-webkit-scrollbar-thumb {
+  background: #1a4a6a;
+  border-radius: 2px;
+}
+.dash-dropdown .Select-menu::-webkit-scrollbar-thumb:hover {
+  background: #00d4ff;
+}
