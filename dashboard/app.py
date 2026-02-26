@@ -482,26 +482,18 @@ def _tab_selected_style():
 )
 def load_data(n_intervals, n_clicks, hours, attack_type, severity):
     from datetime import datetime
+    at = attack_type if attack_type and attack_type != "all" else None
+    sv = severity    if severity    and severity    != "all" else None
     try:
-        events_raw       = get_recent_events(limit=500, hours_back=hours)
-        country_raw      = get_country_counts(hours_back=hours)
-        hourly_raw       = get_hourly_counts(hours_back=hours)
-        hourly_type_raw  = get_hourly_counts_by_type(hours_back=hours)
-        attack_raw       = get_attack_type_counts(hours_back=hours)
-        mitre_raw        = get_mitre_technique_counts(hours_back=hours)
-        cves_raw         = get_top_cves(limit=25)
-        severity_raw     = get_severity_distribution(hours_back=hours)
-        total_count      = get_event_count(hours_back=hours)
-
-        # Apply attack type filter
-        if attack_type and attack_type != "all":
-            events_raw      = [e for e in events_raw      if e.get("attack_type") == attack_type]
-            attack_raw      = [a for a in attack_raw      if a.get("attack_type") == attack_type]
-            hourly_type_raw = [h for h in hourly_type_raw if h.get("attack_type") == attack_type]
-
-        # Apply severity filter
-        if severity and severity != "all":
-            events_raw = [e for e in events_raw if e.get("severity") == severity]
+        events_raw      = get_recent_events(limit=500, hours_back=hours, attack_type=at, severity=sv)
+        country_raw     = get_country_counts(hours_back=hours, attack_type=at, severity=sv)
+        hourly_raw      = get_hourly_counts(hours_back=hours, attack_type=at, severity=sv)
+        hourly_type_raw = get_hourly_counts_by_type(hours_back=hours, attack_type=at, severity=sv)
+        attack_raw      = get_attack_type_counts(hours_back=hours, severity=sv)
+        mitre_raw       = get_mitre_technique_counts(hours_back=hours, attack_type=at, severity=sv)
+        cves_raw        = get_top_cves(limit=25)
+        severity_raw    = get_severity_distribution(hours_back=hours, attack_type=at)
+        total_count     = get_event_count(hours_back=hours, attack_type=at, severity=sv)
 
         ts = datetime.utcnow().strftime("Updated %H:%M:%S UTC")
         return (events_raw, country_raw, hourly_raw, hourly_type_raw,
