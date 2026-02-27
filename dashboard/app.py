@@ -605,7 +605,7 @@ def load_data(n_intervals, n_clicks, hours, attack_type, severity):
         country_raw     = get_country_counts(hours_back=hours, attack_type=at, severity=sv)
         hourly_raw      = get_hourly_counts(hours_back=hours, attack_type=at, severity=sv)
         hourly_type_raw = get_hourly_counts_by_type(hours_back=hours, attack_type=at, severity=sv)
-        attack_raw      = get_attack_type_counts(hours_back=hours, severity=sv)
+        attack_raw      = get_attack_type_counts(hours_back=hours, attack_type=at, severity=sv)
         mitre_raw       = get_mitre_technique_counts(hours_back=hours, attack_type=at, severity=sv)
         cves_raw        = get_top_cves(limit=25)
         severity_raw    = get_severity_distribution(hours_back=hours, attack_type=at, severity=sv)
