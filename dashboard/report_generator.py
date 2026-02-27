@@ -119,6 +119,7 @@ def generate_pdf_report(
             get_hourly_counts, get_country_counts,
             get_top_cves, get_severity_distribution,
             get_mitre_technique_counts, get_event_count,
+            get_avg_severity_score,
         )
         from visualizations.charts import (
             build_timeseries_chart, build_attack_type_bar,
@@ -141,10 +142,20 @@ def generate_pdf_report(
         cves          = get_top_cves(limit=15)
         mitre_data    = get_mitre_technique_counts(hours_back=hours_back,
                                                    attack_type=attack_type, severity=severity)
-        kpis          = compute_kpi_stats(events)
-        # Accurate total count (not capped at the 500-event sample used for KPI calc)
-        total_events  = get_event_count(hours_back=hours_back,
-                                        attack_type=attack_type, severity=severity)
+
+        # Accurate KPIs — all from full DB aggregations, not the 500-event sample
+        total_events   = get_event_count(hours_back=hours_back,
+                                         attack_type=attack_type, severity=severity)
+        avg_sev        = get_avg_severity_score(hours_back=hours_back,
+                                                attack_type=attack_type, severity=severity)
+        critical_count = next((s["count"] for s in severity_data
+                                if s.get("severity") == "Critical"), 0)
+        high_count     = next((s["count"] for s in severity_data
+                                if s.get("severity") == "High"), 0)
+        country_count  = len(country)
+        top_attack     = attack_counts[0]["attack_type"] if attack_counts else "N/A"
+
+        kpis = compute_kpi_stats(events)  # still used for recommendations logic
 
     except Exception as e:
         logger.error(f"Failed to load data for report: {e}")
@@ -196,13 +207,13 @@ def generate_pdf_report(
     story.append(Spacer(1, 0.3 * cm))
 
     kpi_data = [
-        ["Total Events",       "Critical Events",   "Countries",          "Avg Severity",       "Top Attack Type"],
+        ["Total Events", "Critical Events", "Countries", "Avg Severity", "Top Attack Type"],
         [
-            f"{total_events:,}",                      # accurate DB count, not capped at 500
-            str(kpis.get("critical_count", 0)),
-            str(kpis.get("unique_countries", 0)),
-            str(kpis.get("avg_severity", 0)),
-            str(kpis.get("top_attack_type", "N/A")),
+            f"{total_events:,}",
+            f"{critical_count:,}",
+            str(country_count),
+            str(avg_sev),
+            top_attack,
         ]
     ]
 
