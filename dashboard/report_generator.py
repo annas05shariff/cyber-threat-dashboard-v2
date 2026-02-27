@@ -37,9 +37,27 @@ try:
     )
     from reportlab.platypus.flowables import HRFlowable
     REPORTLAB_OK = True
+
+    # ── Design colors (defined here so HexColor is in scope) ───────────────────
+    C_BG       = HexColor("#050a0f")
+    C_PANEL    = HexColor("#0a1520")
+    C_CYAN     = HexColor("#00d4ff")
+    C_GREEN    = HexColor("#00ff88")
+    C_RED      = HexColor("#ff3355")
+    C_ORANGE   = HexColor("#ff6b35")
+    C_YELLOW   = HexColor("#ffd700")
+    C_PURPLE   = HexColor("#a78bfa")
+    C_TEXT     = HexColor("#c8e6f5")
+    C_MUTED    = HexColor("#527a99")
+    C_DARK     = HexColor("#0a1520")
+    C_BORDER   = HexColor("#0f3a5c")
+
 except ImportError:
     REPORTLAB_OK = False
     logger.warning("reportlab not installed — run: pip install reportlab")
+    # Stub colors so module-level references don't raise NameError
+    C_BG = C_PANEL = C_CYAN = C_GREEN = C_RED = C_ORANGE = None
+    C_YELLOW = C_PURPLE = C_TEXT = C_MUTED = C_DARK = C_BORDER = None
 
 # ── Kaleido for chart export ───────────────────────────────────────────────────
 try:
@@ -48,21 +66,6 @@ try:
 except ImportError:
     KALEIDO_OK = False
     logger.warning("kaleido not installed — run: pip install kaleido")
-
-
-# ── Design colors ──────────────────────────────────────────────────────────────
-C_BG       = HexColor("#050a0f")
-C_PANEL    = HexColor("#0a1520")
-C_CYAN     = HexColor("#00d4ff")
-C_GREEN    = HexColor("#00ff88")
-C_RED      = HexColor("#ff3355")
-C_ORANGE   = HexColor("#ff6b35")
-C_YELLOW   = HexColor("#ffd700")
-C_PURPLE   = HexColor("#a78bfa")
-C_TEXT     = HexColor("#c8e6f5")
-C_MUTED    = HexColor("#527a99")
-C_DARK     = HexColor("#0a1520")
-C_BORDER   = HexColor("#0f3a5c")
 
 SEVERITY_COLORS = {
     "Critical": C_RED,
