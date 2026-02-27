@@ -465,8 +465,8 @@ def build_cve_chart(cve_data: List[dict], top_n: int = 20) -> go.Figure:
 
     hover_texts = []
     for _, row in df.iterrows():
-        product = row.get("affected_product") or "unknown"
-        vendor  = row.get("affected_vendor") or "unknown"
+        product = row.get("affected_product") or "N/A"
+        vendor  = row.get("affected_vendor")  or "N/A"
         desc    = (row.get("description") or "")[:100]
         hover_texts.append(f"<b>{row['cve_id']}</b><br>{vendor}/{product}<br>{desc}")
 

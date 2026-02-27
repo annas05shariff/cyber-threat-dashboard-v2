@@ -358,8 +358,8 @@ def generate_pdf_report(
                 cve.get("cve_id", ""),
                 f"{score:.1f}" if score else "N/A",
                 sev,
-                (cve.get("affected_vendor")  or "?")[:12],
-                (cve.get("affected_product") or "?")[:14],
+                (cve.get("affected_vendor")  or "N/A")[:12],
+                (cve.get("affected_product") or "N/A")[:14],
                 desc,
             ])
 

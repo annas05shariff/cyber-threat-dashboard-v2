@@ -50,6 +50,36 @@ KEYWORD_TO_MITRE = {
     "ransomware":             ("Impact",              "T1486", "Data Encrypted for Impact"),
 }
 
+def _extract_vendor_product(cve_data: dict) -> tuple:
+    """
+    Recursively search NVD configurations for the first vulnerable CPE entry.
+    NVD nests CPE matches at varying depths: nodes → cpeMatch, or nodes → children → cpeMatch.
+    Returns (vendor, product) or (None, None) if not found.
+    """
+    def _search_nodes(nodes: list) -> tuple:
+        for node in nodes:
+            # Direct cpeMatch on this node
+            for match in node.get("cpeMatch", []):
+                if match.get("vulnerable", True):
+                    parts = match.get("criteria", "").split(":")
+                    if len(parts) > 4:
+                        v = parts[3] if parts[3] not in ("*", "-", "") else None
+                        p = parts[4] if parts[4] not in ("*", "-", "") else None
+                        if v:
+                            return v, p
+            # Recurse into children
+            result = _search_nodes(node.get("children", []))
+            if result[0]:
+                return result
+        return None, None
+
+    for config in cve_data.get("configurations", []):
+        v, p = _search_nodes(config.get("nodes", []))
+        if v:
+            return v, p
+    return None, None
+
+
 def _extract_mitre(description: str) -> tuple:
     """Return (tactic, technique_id, technique) based on description keywords."""
     desc_lower = description.lower()
@@ -107,20 +137,8 @@ def _parse_cve_item(item: dict) -> Optional[CVEEvent]:
                 attack_vector = cvss_data.get("attackVector") or cvss_data.get("accessVector")
                 break
 
-        # Affected vendor/product
-        vendor  = None
-        product = None
-        configs = cve_data.get("configurations", [])
-        if configs:
-            nodes = configs[0].get("nodes", [])
-            if nodes:
-                cpe_matches = nodes[0].get("cpeMatch", [])
-                if cpe_matches:
-                    cpe = cpe_matches[0].get("criteria", "")
-                    parts = cpe.split(":")
-                    if len(parts) > 4:
-                        vendor  = parts[3]
-                        product = parts[4]
+        # Affected vendor/product — search all nodes + children recursively
+        vendor, product = _extract_vendor_product(cve_data)
 
         # References
         refs = [r.get("url", "") for r in cve_data.get("references", [])[:5]]
