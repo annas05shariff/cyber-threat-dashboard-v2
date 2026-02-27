@@ -25,6 +25,7 @@ def _tab_selected_style():
 import logging
 import sys
 import os
+from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -393,33 +394,40 @@ app.layout = html.Div([
 
     # ── PDF Export Button + Download component ──────────────────────────────
     html.Div([
-        html.Button(
-            "⬇  Export PDF Report",
-            id    = "btn-export-pdf",
-            n_clicks = 0,
-            style = {
-                "backgroundColor": "rgba(0,255,136,0.08)",
-                "color":           "#00ff88",
-                "border":          "1px solid #00ff88",
-                "borderRadius":    "4px",
-                "padding":         "7px 18px",
-                "fontFamily":      "Rajdhani, monospace",
-                "fontSize":        "12px",
-                "cursor":          "pointer",
-                "letterSpacing":   "1px",
-                "marginLeft":      "auto",
-                "display":         "block",
-            }
+        html.Div([
+            html.Button(
+                "⬇  Export PDF Report",
+                id       = "btn-export-pdf",
+                n_clicks = 0,
+                style    = {
+                    "backgroundColor": "rgba(0,255,136,0.08)",
+                    "color":           "#00ff88",
+                    "border":          "1px solid #00ff88",
+                    "borderRadius":    "4px",
+                    "padding":         "7px 18px",
+                    "fontFamily":      "Rajdhani, monospace",
+                    "fontSize":        "12px",
+                    "cursor":          "pointer",
+                    "letterSpacing":   "1px",
+                }
+            ),
+            dcc.Download(id="download-pdf"),
+        ], style={"marginLeft": "auto", "display": "flex", "alignItems": "center", "gap": "10px"}),
+
+        # Loading wrapper — shows a spinner while PDF is generating
+        dcc.Loading(
+            id       = "loading-pdf",
+            type     = "circle",
+            color    = "#00ff88",
+            children = html.Div(id="export-status", style={
+                "fontFamily": "Share Tech Mono, monospace",
+                "fontSize":   "10px",
+                "color":      "#527a99",
+                "textAlign":  "right",
+                "marginTop":  "4px",
+                "minHeight":  "14px",
+            }),
         ),
-        dcc.Download(id="download-pdf"),
-        html.Div(id="export-status", style={
-            "fontFamily": "Share Tech Mono, monospace",
-            "fontSize":   "10px",
-            "color":      "#527a99",
-            "textAlign":  "right",
-            "marginTop":  "4px",
-            "minHeight":  "14px",
-        }),
     ], style={"padding": "0 24px 8px", "display": "flex", "flexDirection": "column"}),
 
     # Tabs — all content pre-rendered so chart IDs always exist in the DOM
@@ -622,7 +630,7 @@ def update_live_feed(events):
     Output("download-pdf",   "data"),
     Output("export-status",  "children"),
     Input("btn-export-pdf",  "n_clicks"),
-    Input("filter-hours",    "value"),
+    State("filter-hours",    "value"),    # State — not a trigger, just reads current value
     prevent_initial_call = True,
 )
 def export_pdf(n_clicks, hours_back):
@@ -630,15 +638,12 @@ def export_pdf(n_clicks, hours_back):
         return None, ""
     try:
         from dashboard.report_generator import generate_pdf_report
-        import base64
 
-        # Update status while generating
         pdf_path = generate_pdf_report(hours_back=hours_back or 24)
 
         if not pdf_path:
-            return None, "⚠ Export failed — check reportlab + kaleido are installed"
+            return None, "⚠ Export failed — install reportlab: pip install reportlab"
 
-        # Read and send file
         with open(pdf_path, "rb") as f:
             pdf_bytes = f.read()
 
@@ -649,11 +654,11 @@ def export_pdf(n_clicks, hours_back):
             dcc.send_bytes(pdf_bytes, filename),
             f"✓ Report exported — {filename}",
         )
-    except ImportError:
-        return None, "⚠ Install reportlab + kaleido: pip install reportlab kaleido"
+    except ImportError as e:
+        return None, f"⚠ Missing dependency: {str(e).split('No module named ')[-1]} — run: pip install reportlab"
     except Exception as e:
-        logger.error(f"PDF export error: {e}")
-        return None, f"⚠ Export error: {str(e)[:50]}"
+        logger.error(f"PDF export error: {e}", exc_info=True)
+        return None, f"⚠ Export error: {str(e)[:60]}"
 
 
 # ══ Entry Point ════════════════════════════════════════════════════════════════
