@@ -785,16 +785,26 @@ def update_alerts_tab(alerts):
     Output("download-pdf",   "data"),
     Output("export-status",  "children"),
     Input("btn-export-pdf",  "n_clicks"),
-    State("filter-hours",    "value"),    # State — not a trigger, just reads current value
+    State("filter-hours",       "value"),
+    State("filter-attack-type", "value"),
+    State("filter-severity",    "value"),
     prevent_initial_call = True,
 )
-def export_pdf(n_clicks, hours_back):
+def export_pdf(n_clicks, hours_back, attack_type, severity):
     if not n_clicks:
         return None, ""
     try:
         from dashboard.report_generator import generate_pdf_report
 
-        pdf_path = generate_pdf_report(hours_back=hours_back or 24)
+        # Normalise "All" → None so the DB query runs without a filter
+        atk = None if not attack_type or attack_type in ("All", "all") else attack_type
+        sev = None if not severity    or severity    in ("All", "all") else severity
+
+        pdf_path = generate_pdf_report(
+            hours_back  = hours_back or 24,
+            attack_type = atk,
+            severity    = sev,
+        )
 
         if not pdf_path:
             return None, "⚠ Export failed — install reportlab: pip install reportlab"

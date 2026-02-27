@@ -91,6 +91,8 @@ def _export_chart_as_image(fig, width_px: int = 900, height_px: int = 400) -> Op
 
 def generate_pdf_report(
     hours_back:  int  = 24,
+    attack_type: str  = None,
+    severity:    str  = None,
     output_path: str  = None,
 ) -> Optional[str]:
     """
@@ -116,7 +118,7 @@ def generate_pdf_report(
             get_recent_events, get_attack_type_counts,
             get_hourly_counts, get_country_counts,
             get_top_cves, get_severity_distribution,
-            get_mitre_technique_counts,
+            get_mitre_technique_counts, get_event_count,
         )
         from visualizations.charts import (
             build_timeseries_chart, build_attack_type_bar,
@@ -127,14 +129,22 @@ def generate_pdf_report(
             build_choropleth_map, build_mitre_treemap,
         )
 
-        events        = get_recent_events(limit=500, hours_back=hours_back)
+        events        = get_recent_events(limit=500, hours_back=hours_back,
+                                          attack_type=attack_type, severity=severity)
         hourly        = get_hourly_counts(hours_back=hours_back)
-        country       = get_country_counts(hours_back=hours_back)
-        attack_counts = get_attack_type_counts(hours_back=hours_back)
-        severity_data = get_severity_distribution(hours_back=hours_back)
+        country       = get_country_counts(hours_back=hours_back,
+                                           attack_type=attack_type, severity=severity)
+        attack_counts = get_attack_type_counts(hours_back=hours_back,
+                                               attack_type=attack_type, severity=severity)
+        severity_data = get_severity_distribution(hours_back=hours_back,
+                                                  attack_type=attack_type, severity=severity)
         cves          = get_top_cves(limit=15)
-        mitre_data    = get_mitre_technique_counts(hours_back=hours_back)
+        mitre_data    = get_mitre_technique_counts(hours_back=hours_back,
+                                                   attack_type=attack_type, severity=severity)
         kpis          = compute_kpi_stats(events)
+        # Accurate total count (not capped at the 500-event sample used for KPI calc)
+        total_events  = get_event_count(hours_back=hours_back,
+                                        attack_type=attack_type, severity=severity)
 
     except Exception as e:
         logger.error(f"Failed to load data for report: {e}")
@@ -169,6 +179,12 @@ def generate_pdf_report(
     story.append(Paragraph("Executive Security Report", styles["cover_title"]))
     story.append(Spacer(1, 0.5 * cm))
     story.append(Paragraph(f"Reporting Period: Last {hours_back} Hours", styles["cover_sub"]))
+    if attack_type or severity:
+        filters_str = "  |  ".join(filter(None, [
+            f"Attack Type: {attack_type}" if attack_type else None,
+            f"Severity: {severity}"       if severity    else None,
+        ]))
+        story.append(Paragraph(f"Active Filters: {filters_str}", styles["cover_sub"]))
     story.append(Paragraph(f"Generated: {now_str}", styles["cover_sub"]))
 
     story.append(Spacer(1, 0.8 * cm))
@@ -182,7 +198,7 @@ def generate_pdf_report(
     kpi_data = [
         ["Total Events",       "Critical Events",   "Countries",          "Avg Severity",       "Top Attack Type"],
         [
-            str(kpis.get("total_events", 0)),
+            f"{total_events:,}",                      # accurate DB count, not capped at 500
             str(kpis.get("critical_count", 0)),
             str(kpis.get("unique_countries", 0)),
             str(kpis.get("avg_severity", 0)),
@@ -308,17 +324,22 @@ def generate_pdf_report(
     story.append(Paragraph("MITRE ATT&CK COVERAGE", styles["section_title"]))
     story.append(Spacer(1, 0.3 * cm))
 
-    try:
-        fig_tree = build_mitre_treemap(mitre_data)
-        img_tree = _export_chart_as_image(fig_tree, 900, 420)
-        if img_tree:
-            story.append(Image(io.BytesIO(img_tree), width=17 * cm, height=8 * cm))
-            story.append(Paragraph(
-                "Figure 5: MITRE ATT&CK technique coverage. Rectangle size indicates event volume; color indicates average severity.",
-                styles["caption"]
-            ))
-    except Exception as e:
-        logger.warning(f"Treemap chart failed: {e}")
+    if mitre_data:
+        story.append(Paragraph("TOP TECHNIQUES BY EVENT VOLUME", styles["section_label"]))
+        story.append(Spacer(1, 0.3 * cm))
+        for item in _build_mitre_bars(mitre_data, top_n=15):
+            story.append(item)
+
+        # Tactic legend
+        story.append(Spacer(1, 0.5 * cm))
+        story.append(Paragraph("TACTIC COLOUR KEY", styles["section_label"]))
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(_build_mitre_legend())
+    else:
+        story.append(Paragraph(
+            "No MITRE ATT&CK technique data available for this reporting period.",
+            styles["caption"]
+        ))
 
     story.append(PageBreak())
 
@@ -433,12 +454,12 @@ def _build_styles() -> dict:
             spaceAfter=8, spaceBefore=4, alignment=TA_CENTER,
         ),
         "rec_title": ParagraphStyle("rec_title",
-            fontName="Helvetica-Bold", fontSize=11, textColor=C_GREEN,
+            fontName="Helvetica-Bold", fontSize=11, textColor=C_CYAN,
             spaceAfter=3,
         ),
         "rec_detail": ParagraphStyle("rec_detail",
             fontName="Helvetica", fontSize=9, textColor=C_TEXT,
-            spaceAfter=4, leftIndent=12,
+            spaceAfter=4, leftIndent=12, leading=14,
         ),
         "footer": ParagraphStyle("footer",
             fontName="Helvetica", fontSize=7, textColor=C_MUTED,
@@ -579,10 +600,134 @@ def _build_attack_bars(attack_counts: list, top_n: int = 10) -> list:
     return items
 
 
+MITRE_TACTIC_COLORS = {
+    "Initial Access":       HexColor("#ff3355"),
+    "Execution":            HexColor("#ff6b35"),
+    "Persistence":          HexColor("#ffd700"),
+    "Privilege Escalation": HexColor("#a78bfa"),
+    "Defense Evasion":      HexColor("#00ff88"),
+    "Credential Access":    HexColor("#00d4ff"),
+    "Discovery":            HexColor("#7dd3fc"),
+    "Lateral Movement":     HexColor("#f472b6"),
+    "Collection":           HexColor("#fb923c"),
+    "Command and Control":  HexColor("#34d399"),
+    "Exfiltration":         HexColor("#f87171"),
+    "Impact":               HexColor("#e879f9"),
+}
+
+
+def _build_mitre_bars(mitre_data: list, top_n: int = 15) -> list:
+    """
+    Native ReportLab bar chart for MITRE ATT&CK top techniques.
+    Columns: [TechID | Technique Name | filled bar | empty | count]
+    Bar color = tactic color.  No kaleido needed.
+    """
+    sorted_data = sorted(mitre_data, key=lambda x: x.get("count", 0), reverse=True)[:top_n]
+    max_count   = max((a.get("count", 0) for a in sorted_data), default=1)
+
+    ID_W    = 1.5 * cm
+    LABEL_W = 4.5 * cm
+    BAR_MAX = 7.5 * cm
+    COUNT_W = 2.0 * cm
+
+    items = []
+    for a in sorted_data:
+        tech_id   = (a.get("technique_id") or "")[:10]
+        technique = (a.get("technique")    or "Unknown")[:28]
+        tactic    = a.get("tactic", "")
+        count     = a.get("count", 0)
+        pct       = count / max_count if max_count else 0
+        color     = MITRE_TACTIC_COLORS.get(tactic, HexColor("#527a99"))
+
+        bar_filled = max(0.2 * cm, pct * BAR_MAX)
+        bar_empty  = BAR_MAX - bar_filled
+
+        row = Table(
+            [[tech_id, technique, "", "", f"{count:,}"]],
+            colWidths=[ID_W, LABEL_W, bar_filled, bar_empty, COUNT_W],
+        )
+        row.setStyle(TableStyle([
+            # Technique ID
+            ("BACKGROUND",    (0, 0), (0, 0), C_DARK),
+            ("TEXTCOLOR",     (0, 0), (0, 0), C_MUTED),
+            ("FONTNAME",      (0, 0), (0, 0), "Helvetica"),
+            ("FONTSIZE",      (0, 0), (0, 0), 7),
+            ("ALIGN",         (0, 0), (0, 0), "CENTER"),
+            # Technique name (tactic color)
+            ("BACKGROUND",    (1, 0), (1, 0), C_DARK),
+            ("TEXTCOLOR",     (1, 0), (1, 0), color),
+            ("FONTNAME",      (1, 0), (1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",      (1, 0), (1, 0), 8),
+            ("ALIGN",         (1, 0), (1, 0), "LEFT"),
+            ("LEFTPADDING",   (1, 0), (1, 0), 4),
+            # Filled bar
+            ("BACKGROUND",    (2, 0), (2, 0), color),
+            ("LEFTPADDING",   (2, 0), (2, 0), 0),
+            ("RIGHTPADDING",  (2, 0), (2, 0), 0),
+            # Empty bar
+            ("BACKGROUND",    (3, 0), (3, 0), HexColor("#0d1e2e")),
+            ("LEFTPADDING",   (3, 0), (3, 0), 0),
+            ("RIGHTPADDING",  (3, 0), (3, 0), 0),
+            # Count
+            ("BACKGROUND",    (4, 0), (4, 0), C_DARK),
+            ("TEXTCOLOR",     (4, 0), (4, 0), C_MUTED),
+            ("FONTNAME",      (4, 0), (4, 0), "Helvetica"),
+            ("FONTSIZE",      (4, 0), (4, 0), 8),
+            ("ALIGN",         (4, 0), (4, 0), "CENTER"),
+            # Row
+            ("TOPPADDING",    (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("INNERGRID",     (0, 0), (-1, -1), 0, white),
+            ("BOX",           (0, 0), (-1, -1), 0.5, HexColor("#0f3a5c")),
+        ]))
+        items.append(row)
+        items.append(Spacer(1, 2))
+
+    return items
+
+
+def _build_mitre_legend() -> Table:
+    """2-column legend mapping tactic name → color swatch."""
+    items = list(MITRE_TACTIC_COLORS.items())
+    # Pair them up: two tactics per row
+    rows = []
+    for i in range(0, len(items), 2):
+        left_tactic,  left_color  = items[i]
+        right_tactic, right_color = items[i + 1] if i + 1 < len(items) else ("", None)
+        rows.append([
+            "■", left_tactic,
+            "■" if right_color else "", right_tactic,
+        ])
+
+    legend = Table(rows, colWidths=[0.5*cm, 7.5*cm, 0.5*cm, 7.5*cm])
+    style_cmds = [
+        ("FONTNAME",      (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE",      (0, 0), (-1, -1), 8),
+        ("BACKGROUND",    (0, 0), (-1, -1), C_DARK),
+        ("TOPPADDING",    (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+    ]
+    for row_idx, (i) in enumerate(range(0, len(items), 2)):
+        left_tactic,  left_color  = items[i]
+        right_tactic, right_color = items[i + 1] if i + 1 < len(items) else ("", None)
+        style_cmds.append(("TEXTCOLOR", (0, row_idx), (0, row_idx), left_color))
+        style_cmds.append(("TEXTCOLOR", (1, row_idx), (1, row_idx), left_color))
+        if right_color:
+            style_cmds.append(("TEXTCOLOR", (2, row_idx), (2, row_idx), right_color))
+            style_cmds.append(("TEXTCOLOR", (3, row_idx), (3, row_idx), right_color))
+    legend.setStyle(TableStyle(style_cmds))
+    return legend
+
+
 def _page_template(canvas, doc):
     """Draw page header/footer on every page."""
     canvas.saveState()
     w, h = A4
+
+    # Full-page dark background (must be drawn first, behind everything)
+    canvas.setFillColor(C_BG)
+    canvas.rect(0, 0, w, h, fill=1, stroke=0)
 
     # Top bar
     canvas.setFillColor(C_DARK)
