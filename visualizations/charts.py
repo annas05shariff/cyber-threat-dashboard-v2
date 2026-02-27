@@ -193,7 +193,7 @@ def build_timeseries_chart(
             range       = [0, 10],
             showgrid    = False,
         ),
-        legend = dict(orientation="h", y=1.12, x=0),
+        legend = dict(orientation="h", y=-0.2, x=0),
     )
 
     return _apply_base(fig, "Attack Frequency Over Time")
@@ -526,7 +526,7 @@ def build_stacked_trend_from_hourly(hourly_type_data: List[dict]) -> go.Figure:
             hovertemplate = f"<b>{attack_type}</b><br>%{{x|%b %d %H:00}}<br>Count: %{{y}}<extra></extra>",
         ))
 
-    fig.update_layout(legend=dict(orientation="h", y=1.15, font=dict(size=9)))
+    fig.update_layout(legend=dict(orientation="h", y=-0.2, font=dict(size=9)))
     return _apply_base(fig, "Attack Volume by Type Over Time (Stacked)")
 
 
@@ -561,7 +561,7 @@ def build_stacked_trend(events_data: List[dict]) -> go.Figure:
             hovertemplate = f"<b>{attack_type}</b><br>%{{x|%H:00}}<br>Count: %{{y}}<extra></extra>",
         ))
 
-    fig.update_layout(legend=dict(orientation="h", y=1.15, font=dict(size=9)))
+    fig.update_layout(legend=dict(orientation="h", y=-0.2, font=dict(size=9)))
     return _apply_base(fig, "Attack Volume by Type Over Time (Stacked)")
 
 

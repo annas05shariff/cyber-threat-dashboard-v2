@@ -321,7 +321,7 @@ def generate_pdf_report(
 
     # ══ PAGE 4: MITRE ATT&CK ═══════════════════════════════════════════════
 
-    story.append(Paragraph("MITRE ATT&CK COVERAGE", styles["section_title"]))
+    story.append(Paragraph("MITRE ATT&amp;CK COVERAGE", styles["section_title"]))
     story.append(Spacer(1, 0.3 * cm))
 
     if mitre_data:
@@ -337,7 +337,7 @@ def generate_pdf_report(
         story.append(_build_mitre_legend())
     else:
         story.append(Paragraph(
-            "No MITRE ATT&CK technique data available for this reporting period.",
+            "No MITRE ATT&amp;CK technique data available for this reporting period.",
             styles["caption"]
         ))
 
@@ -816,7 +816,7 @@ def _generate_recommendations(kpis: dict, attack_counts: list, cves: list) -> li
     recs.append({
         "title": "Log Retention and SIEM Tuning",
         "detail": "Retain raw security logs for minimum 90 days. Review SIEM correlation rules against "
-                  "the MITRE ATT&CK techniques active in this report. Tune detection rules for "
+                  "the MITRE ATT&amp;CK techniques active in this report. Tune detection rules for "
                   "techniques with high frequency but low current alert coverage."
     })
 
