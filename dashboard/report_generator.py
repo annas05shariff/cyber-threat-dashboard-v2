@@ -349,46 +349,55 @@ def generate_pdf_report(
     story.append(Spacer(1, 0.3 * cm))
 
     if cves:
-        cve_rows = [["CVE ID", "CVSS", "Severity", "Vendor", "Product", "Description"]]
-        for cve in cves[:12]:
-            score    = cve.get("cvss_score") or 0
-            sev      = cve.get("cvss_severity") or "N/A"
-            desc     = (cve.get("description") or "")[:60] + ("..." if len(cve.get("description","")) > 60 else "")
+        # Paragraph styles for wrapping table cells
+        hdr_ps  = ParagraphStyle("ch", fontName="Helvetica",      fontSize=7,   textColor=C_MUTED, leading=9)
+        id_ps   = ParagraphStyle("ci", fontName="Helvetica-Bold", fontSize=7.5, textColor=C_TEXT,  leading=9)
+        cell_ps = ParagraphStyle("cc", fontName="Helvetica",      fontSize=7.5, textColor=C_TEXT,  leading=9)
+
+        # Column widths — total = 18 cm (full usable width)
+        COL_W = [3.0*cm, 1.2*cm, 1.6*cm, 2.2*cm, 2.2*cm, 7.8*cm]
+
+        cve_rows = [[
+            Paragraph("CVE ID",      hdr_ps),
+            Paragraph("CVSS",        hdr_ps),
+            Paragraph("Sev",         hdr_ps),
+            Paragraph("Vendor",      hdr_ps),
+            Paragraph("Product",     hdr_ps),
+            Paragraph("Description", hdr_ps),
+        ]]
+
+        sev_colors = []  # (row_index, color) for severity column colouring
+        for idx, cve in enumerate(cves[:12], 1):
+            score = cve.get("cvss_score") or 0
+            sev   = (cve.get("cvss_severity") or "N/A").capitalize()
+            desc  = (cve.get("description") or "")[:160]
+            color = C_RED if score >= 9 else C_ORANGE if score >= 7 else C_YELLOW if score >= 4 else C_GREEN
+            sev_colors.append((idx, color))
+
+            sev_ps = ParagraphStyle(f"cs{idx}", fontName="Helvetica-Bold", fontSize=7.5,
+                                    textColor=color, leading=9)
             cve_rows.append([
-                cve.get("cve_id", ""),
-                f"{score:.1f}" if score else "N/A",
-                sev,
-                (cve.get("affected_vendor")  or "N/A")[:12],
-                (cve.get("affected_product") or "N/A")[:14],
-                desc,
+                Paragraph(cve.get("cve_id", ""),                           id_ps),
+                Paragraph(f"{score:.1f}" if score else "N/A",              ParagraphStyle(f"cv{idx}", fontName="Helvetica-Bold", fontSize=7.5, textColor=color, leading=9, alignment=1)),
+                Paragraph(sev,                                             sev_ps),
+                Paragraph((cve.get("affected_vendor")  or "N/A")[:16],    cell_ps),
+                Paragraph((cve.get("affected_product") or "N/A")[:18],    cell_ps),
+                Paragraph(desc,                                            cell_ps),
             ])
 
-        cve_table = Table(
-            cve_rows,
-            colWidths=[2.8*cm, 1.4*cm, 1.8*cm, 2.2*cm, 2.5*cm, 6.3*cm]
-        )
-        cve_style = [
-            ("BACKGROUND",   (0, 0), (-1, 0), C_DARK),
-            ("TEXTCOLOR",    (0, 0), (-1, 0), C_MUTED),
-            ("FONTNAME",     (0, 0), (-1, 0), "Helvetica"),
-            ("FONTSIZE",     (0, 0), (-1, -1), 7.5),
-            ("ALIGN",        (0, 0), (-1, -1), "LEFT"),
-            ("ALIGN",        (1, 0), (2, -1), "CENTER"),
-            ("BOX",          (0, 0), (-1, -1), 1, C_BORDER),
-            ("INNERGRID",    (0, 0), (-1, -1), 0.5, C_BORDER),
-            ("TOPPADDING",   (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
-            ("ROWBACKGROUNDS",(0,1), (-1,-1), [C_PANEL, C_DARK]),
-            ("TEXTCOLOR",    (0, 1), (-1, -1), C_TEXT),
-            ("FONTNAME",     (0, 1), (0, -1), "Helvetica-Bold"),  # CVE ID bold
-        ]
-        # Color-code severity column
-        for i, cve in enumerate(cves[:12], 1):
-            score = cve.get("cvss_score") or 0
-            color = C_RED if score >= 9 else C_ORANGE if score >= 7 else C_YELLOW if score >= 4 else C_GREEN
-            cve_style.append(("TEXTCOLOR", (1, i), (2, i), color))
-
-        cve_table.setStyle(TableStyle(cve_style))
+        cve_table = Table(cve_rows, colWidths=COL_W, repeatRows=1)
+        cve_table.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0),  C_DARK),
+            ("BACKGROUND",    (0, 1), (-1, -1), C_PANEL),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [C_PANEL, C_DARK]),
+            ("BOX",           (0, 0), (-1, -1), 1,   C_BORDER),
+            ("INNERGRID",     (0, 0), (-1, -1), 0.5, C_BORDER),
+            ("TOPPADDING",    (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ]))
         story.append(cve_table)
         story.append(Spacer(1, 0.5 * cm))
 
