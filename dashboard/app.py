@@ -43,7 +43,7 @@ from config.database import (
     get_country_counts, get_mitre_technique_counts,
     get_top_cves, get_severity_distribution,
     get_event_count, get_avg_severity_score, ensure_indexes,
-    get_alerts, get_unresolved_alert_count,
+    get_alerts, get_unresolved_alert_count, get_top_source_ips,
 )
 from visualizations.charts import (
     build_timeseries_chart, build_attack_type_bar,
@@ -55,8 +55,16 @@ from visualizations.charts import (
 from visualizations.geo_charts import (
     build_choropleth_map, build_scatter_geo_map,
     build_mitre_treemap, build_mitre_sunburst,
-    build_country_attack_bubble,
+    build_country_attack_bubble, build_live_attack_map,
 )
+from dashboard.threat_intel import (
+    tab_threat_intel_layout, lookup_abuseipdb, lookup_otx_ip,
+    lookup_otx_domain, get_otx_recent_pulses,
+    render_ioc_results, render_otx_pulses, render_top_ips,
+)
+from dashboard.security_tools import tab_security_tools_layout
+from dashboard.nmap_scanner import run_nmap_scan, SCAN_TYPES, nmap_available
+from dashboard.url_scanner import scan_url
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -293,6 +301,11 @@ def tab_overview():
 
 def tab_geo():
     return html.Div([
+        # Live Attack Map — top of geo tab
+        html.Div([
+            dcc.Graph(id="chart-live-attack-map", style={"height": "420px"}, config={"displayModeBar": False}),
+        ], style={**STYLE["panel"], "marginBottom": "16px", "borderColor": "#ff3355"}),
+
         html.Div([
             dcc.Graph(id="chart-choropleth", style={"height": "400px"}, config={"displayModeBar": False}),
         ], style={**STYLE["panel"], "marginBottom": "16px"}),
@@ -547,6 +560,8 @@ app.layout = html.Div([
         dcc.Tab(label="CVEs",      value="cve",      style=_tab_style(), selected_style=_tab_selected_style(), children=tab_cve()),
         dcc.Tab(label="Live Feed", value="feed",     style=_tab_style(), selected_style=_tab_selected_style(), children=tab_live_feed()),
         dcc.Tab(id="tab-alerts-label", label="⚠ Alerts", value="alerts", style=_tab_style(), selected_style={**_tab_selected_style(), "color": "#ff6b35"}, children=tab_alerts()),
+        dcc.Tab(label="🕵 Threat Intel", value="threat-intel", style=_tab_style(), selected_style={**_tab_selected_style(), "color": "#00d4ff"}, children=tab_threat_intel_layout()),
+        dcc.Tab(label="🔧 Security Tools", value="tools", style=_tab_style(), selected_style={**_tab_selected_style(), "color": "#00ff88"}, children=tab_security_tools_layout()),
     ]),
 
 ], style={
@@ -824,6 +839,257 @@ def export_pdf(n_clicks, hours_back, attack_type, severity):
     except Exception as e:
         logger.error(f"PDF export error: {e}", exc_info=True)
         return None, f"⚠ Export error: {str(e)[:60]}"
+
+
+# 12. Live attack map (geo tab)
+@app.callback(
+    Output("chart-live-attack-map", "figure"),
+    Input("store-events", "data"),
+)
+def update_live_attack_map(events):
+    return build_live_attack_map(events or [])
+
+
+# 13. IOC Lookup
+@app.callback(
+    Output("ioc-results", "children"),
+    Input("btn-ioc-lookup", "n_clicks"),
+    State("ioc-input", "value"),
+    prevent_initial_call=True,
+)
+def ioc_lookup(n_clicks, indicator):
+    from config.settings import ABUSEIPDB_KEY, OTX_API_KEY
+    import re
+    if not indicator or not indicator.strip():
+        return html.Div("Enter an IP address or domain to look up.", style={
+            "fontFamily": "Share Tech Mono, monospace", "fontSize": "10px",
+            "color": "#527a99", "padding": "10px 0",
+        })
+    indicator = indicator.strip()
+    is_ip = bool(re.match(r"^\d{1,3}(\.\d{1,3}){3}$", indicator))
+    abuse_data = lookup_abuseipdb(indicator, ABUSEIPDB_KEY) if is_ip and ABUSEIPDB_KEY else {}
+    otx_data = (lookup_otx_ip(indicator, OTX_API_KEY) if is_ip else
+                lookup_otx_domain(indicator, OTX_API_KEY)) if OTX_API_KEY else {}
+    return render_ioc_results(indicator, abuse_data, otx_data)
+
+
+# 14. OTX Pulses
+@app.callback(
+    Output("otx-pulses-container", "children"),
+    Input("btn-refresh-pulses", "n_clicks"),
+    Input("auto-refresh", "n_intervals"),
+    prevent_initial_call=False,
+)
+def update_otx_pulses(n_clicks, n_intervals):
+    from config.settings import OTX_API_KEY
+    pulses = get_otx_recent_pulses(OTX_API_KEY, limit=10) if OTX_API_KEY else []
+    return render_otx_pulses(pulses)
+
+
+# 15. Top reported IPs
+@app.callback(
+    Output("top-ips-container", "children"),
+    Input("auto-refresh", "n_intervals"),
+    Input("btn-refresh", "n_clicks"),
+)
+def update_top_ips(n_intervals, n_clicks):
+    try:
+        ips = get_top_source_ips(limit=15)
+        return render_top_ips(ips)
+    except Exception as e:
+        logger.error(f"Top IPs load failed: {e}")
+        return render_top_ips([])
+
+
+# 16. Nmap scan
+@app.callback(
+    Output("nmap-results", "children"),
+    Input("btn-nmap-scan", "n_clicks"),
+    State("nmap-target", "value"),
+    State("nmap-scan-type", "value"),
+    prevent_initial_call=True,
+)
+def run_nmap(n_clicks, target, scan_type):
+    MONO = {"fontFamily": "Share Tech Mono, monospace"}
+    RAJDHANI = {"fontFamily": "Rajdhani, monospace"}
+
+    if not target or not target.strip():
+        return html.Div("Enter a target IP or hostname.", style={**MONO, "fontSize": "10px", "color": "#527a99"})
+
+    result = run_nmap_scan(target.strip(), scan_type or "quick")
+
+    if not result["success"]:
+        return html.Div([
+            html.Span("✗ ", style={"color": "#ff3355"}),
+            html.Span(result["error"], style={**MONO, "fontSize": "11px", "color": "#ff6b35"}),
+        ])
+
+    hosts = result["hosts"]
+    if not hosts:
+        return html.Div([
+            html.Pre(result["raw_output"][:2000], style={
+                **MONO, "fontSize": "10px", "color": "#527a99",
+                "backgroundColor": "#050a0f", "padding": "10px",
+                "borderRadius": "4px", "overflowX": "auto",
+                "border": "1px solid #0f3a5c", "whiteSpace": "pre-wrap",
+            }),
+        ])
+
+    host_blocks = []
+    for h in hosts:
+        ports = h.get("ports", [])
+        port_rows = []
+        for p in ports:
+            state_color = "#00ff88" if p["state"] == "open" else "#527a99"
+            port_rows.append(html.Tr([
+                html.Td(f"{p['port']}/{p['proto']}", style={**MONO, "fontSize": "10px", "color": "#00d4ff", "padding": "3px 8px"}),
+                html.Td(p["state"], style={**MONO, "fontSize": "10px", "color": state_color, "padding": "3px 8px"}),
+                html.Td(p["service"], style={**MONO, "fontSize": "10px", "color": "#c8e6f5", "padding": "3px 8px"}),
+                html.Td(p["version"], style={**MONO, "fontSize": "10px", "color": "#527a99", "padding": "3px 8px"}),
+            ]))
+
+        host_blocks.append(html.Div([
+            html.Div([
+                html.Span("HOST: ", style={**MONO, "fontSize": "9px", "color": "#527a99"}),
+                html.Span(h["host"], style={**MONO, "fontSize": "12px", "color": "#00d4ff"}),
+                html.Span(f" [{h['state']}]", style={
+                    **MONO, "fontSize": "9px", "marginLeft": "8px",
+                    "color": "#00ff88" if h["state"] == "up" else "#ff3355",
+                }),
+                html.Span(f" OS: {h['os']}" if h.get("os") else "", style={
+                    **MONO, "fontSize": "9px", "color": "#ffd700", "marginLeft": "10px",
+                }),
+            ], style={"marginBottom": "8px"}),
+            html.Table([
+                html.Thead(html.Tr([
+                    html.Th("Port", style={**MONO, "fontSize": "9px", "color": "#355a7a", "padding": "3px 8px", "textAlign": "left"}),
+                    html.Th("State", style={**MONO, "fontSize": "9px", "color": "#355a7a", "padding": "3px 8px", "textAlign": "left"}),
+                    html.Th("Service", style={**MONO, "fontSize": "9px", "color": "#355a7a", "padding": "3px 8px", "textAlign": "left"}),
+                    html.Th("Version", style={**MONO, "fontSize": "9px", "color": "#355a7a", "padding": "3px 8px", "textAlign": "left"}),
+                ])),
+                html.Tbody(port_rows),
+            ], style={
+                "width": "100%", "borderCollapse": "collapse",
+                "backgroundColor": "#050a0f", "borderRadius": "4px",
+            }) if port_rows else html.Div("No open ports found.", style={**MONO, "fontSize": "10px", "color": "#527a99"}),
+        ], style={
+            "backgroundColor": "rgba(0,255,136,0.03)",
+            "border": "1px solid #0f3a5c",
+            "borderRadius": "6px", "padding": "12px",
+            "marginBottom": "10px",
+        }))
+
+    scan_label = SCAN_TYPES.get(scan_type, {}).get("label", scan_type)
+    return html.Div([
+        html.Div([
+            html.Span("✓ Scan complete  ", style={"color": "#00ff88", **RAJDHANI, "fontSize": "13px"}),
+            html.Span(f"{scan_label}  ·  {len(hosts)} host(s)", style={**MONO, "fontSize": "10px", "color": "#527a99"}),
+        ], style={"marginBottom": "12px"}),
+        *host_blocks,
+    ])
+
+
+# 17. URL Scan
+@app.callback(
+    Output("url-scan-results", "children"),
+    Input("btn-url-scan", "n_clicks"),
+    State("url-input", "value"),
+    prevent_initial_call=True,
+)
+def run_url_scan(n_clicks, url):
+    from config.settings import VIRUSTOTAL_KEY
+    MONO = {"fontFamily": "Share Tech Mono, monospace"}
+    RAJDHANI = {"fontFamily": "Rajdhani, monospace"}
+
+    if not url or not url.strip():
+        return html.Div("Enter a URL to scan.", style={**MONO, "fontSize": "10px", "color": "#527a99"})
+
+    result = scan_url(url.strip(), virustotal_key=VIRUSTOTAL_KEY)
+
+    risk = result["risk_score"]
+    risk_color = "#ff3355" if risk >= 75 else "#ff6b35" if risk >= 50 else "#ffd700" if risk >= 25 else "#00ff88"
+    ssl = result["ssl"]
+    headers = result["headers"]
+    bl = result["blacklist"]
+    vt = result["vt"]
+
+    return html.Div([
+        # Risk score banner
+        html.Div([
+            html.Div([
+                html.Div(f"{risk}", style={
+                    **RAJDHANI, "fontSize": "3rem", "fontWeight": "700",
+                    "color": risk_color, "lineHeight": "1",
+                }),
+                html.Div("Risk Score", style={**MONO, "fontSize": "9px", "color": "#527a99"}),
+            ], style={"textAlign": "center", "marginRight": "24px"}),
+            html.Div([
+                html.Div(result["risk_level"], style={
+                    **RAJDHANI, "fontSize": "1.4rem", "fontWeight": "700",
+                    "color": risk_color, "marginBottom": "4px",
+                }),
+                html.Div(result["url"][:60], style={**MONO, "fontSize": "10px", "color": "#527a99"}),
+                html.Div(result["checked_at"], style={**MONO, "fontSize": "9px", "color": "#355a7a"}),
+            ]),
+        ], style={
+            "display": "flex", "alignItems": "center",
+            "padding": "12px 16px",
+            "backgroundColor": f"rgba({','.join(str(int(risk_color.lstrip('#')[i:i+2], 16)) for i in (0,2,4))},0.08)",
+            "borderRadius": "6px", "marginBottom": "14px",
+            "border": f"1px solid {risk_color}30",
+        }),
+
+        # Details grid
+        html.Div([
+            # SSL
+            html.Div([
+                html.Div("SSL / TLS", style={**MONO, "fontSize": "9px", "color": "#527a99", "marginBottom": "6px"}),
+                html.Div("✓ Valid" if ssl.get("valid") else "✗ Invalid", style={
+                    **RAJDHANI, "fontSize": "13px", "fontWeight": "700",
+                    "color": "#00ff88" if ssl.get("valid") else "#ff3355",
+                }),
+                html.Div(f"Expires: {ssl.get('expiry', '—')}", style={**MONO, "fontSize": "9px", "color": "#527a99"}),
+                html.Div(f"Issuer: {ssl.get('issuer', '—')}", style={**MONO, "fontSize": "9px", "color": "#527a99"}),
+                html.Div(ssl.get("error", ""), style={**MONO, "fontSize": "9px", "color": "#ff6b35"}) if ssl.get("error") else html.Div(),
+            ], style={"backgroundColor": "#050a0f", "borderRadius": "6px", "padding": "10px", "flex": "1"}),
+
+            # Security Headers
+            html.Div([
+                html.Div("Security Headers", style={**MONO, "fontSize": "9px", "color": "#527a99", "marginBottom": "6px"}),
+                html.Div(f"✓ {len(headers.get('present', []))} present", style={**RAJDHANI, "fontSize": "12px", "color": "#00ff88"}),
+                html.Div(f"✗ {len(headers.get('missing', []))} missing", style={**RAJDHANI, "fontSize": "12px", "color": "#ff3355"}),
+                html.Div(f"Server: {headers.get('server', '—')}", style={**MONO, "fontSize": "9px", "color": "#527a99", "marginTop": "4px"}),
+                *[html.Div(f"✗ {h}", style={**MONO, "fontSize": "9px", "color": "#ff3355"}) for h in headers.get("missing", [])[:4]],
+            ], style={"backgroundColor": "#050a0f", "borderRadius": "6px", "padding": "10px", "flex": "1"}),
+
+            # Blacklist
+            html.Div([
+                html.Div("Blacklist Check", style={**MONO, "fontSize": "9px", "color": "#527a99", "marginBottom": "6px"}),
+                html.Div(
+                    f"⚠ LISTED ({bl.get('threat', '—')})" if bl.get("listed") else "✓ Not listed",
+                    style={**RAJDHANI, "fontSize": "13px", "fontWeight": "700",
+                           "color": "#ff3355" if bl.get("listed") else "#00ff88"},
+                ),
+                html.Div(f"Source: {bl.get('source', 'URLhaus')}", style={**MONO, "fontSize": "9px", "color": "#527a99"}),
+            ], style={"backgroundColor": "#050a0f", "borderRadius": "6px", "padding": "10px", "flex": "1"}),
+
+            # VirusTotal
+            html.Div([
+                html.Div("VirusTotal", style={**MONO, "fontSize": "9px", "color": "#527a99", "marginBottom": "6px"}),
+                html.Div(
+                    f"{vt.get('positives', 0)}/{vt.get('total', '—')} engines flagged" if vt.get("available") else "No API key set",
+                    style={**RAJDHANI, "fontSize": "12px",
+                           "color": "#ff3355" if vt.get("positives", 0) > 0 else "#527a99"},
+                ),
+                html.A("View on VT →", href=vt.get("permalink", "#"), target="_blank", style={
+                    **MONO, "fontSize": "9px", "color": "#00d4ff",
+                }) if vt.get("permalink") else html.Div(),
+            ], style={"backgroundColor": "#050a0f", "borderRadius": "6px", "padding": "10px", "flex": "1"}),
+        ], style={"display": "flex", "gap": "10px", "flexWrap": "wrap"}),
+    ], style={
+        "backgroundColor": "rgba(167,139,250,0.04)",
+        "border": "1px solid #0f3a5c", "borderRadius": "6px", "padding": "14px",
+    })
 
 
 # ══ Entry Point ════════════════════════════════════════════════════════════════

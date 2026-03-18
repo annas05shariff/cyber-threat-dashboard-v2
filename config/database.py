@@ -366,3 +366,30 @@ def get_severity_distribution(hours_back: int = 24,
         {"$sort": {"count": -1}}
     ]
     return list(get_db()[COLLECTION_EVENTS].aggregate(pipeline))
+
+
+def get_top_source_ips(limit: int = 15, hours_back: int = 168) -> List[dict]:
+    """Top most-reported source IPs for the Threat Intelligence tab."""
+    cutoff = (datetime.utcnow() - timedelta(hours=hours_back)).isoformat()
+    pipeline = [
+        {"$match": {
+            "timestamp": {"$gte": cutoff},
+            "source_ip": {"$ne": None},
+        }},
+        {"$group": {
+            "_id": "$source_ip",
+            "count": {"$sum": 1},
+            "country": {"$first": "$source_geo.country"},
+            "attack_types": {"$addToSet": "$attack_type"},
+        }},
+        {"$project": {
+            "source_ip": "$_id",
+            "count": 1,
+            "country": 1,
+            "attack_types": 1,
+            "_id": 0,
+        }},
+        {"$sort": {"count": -1}},
+        {"$limit": limit},
+    ]
+    return list(get_db()[COLLECTION_EVENTS].aggregate(pipeline))

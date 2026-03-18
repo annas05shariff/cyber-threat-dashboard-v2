@@ -365,6 +365,146 @@ def build_mitre_sunburst(mitre_data: List[dict]) -> go.Figure:
 # MODULE 3 — CHART 5: Attack Type × Country Bubble Chart
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MODULE 3 — CHART NEW: Live Attack Map (pulsing real-time markers)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def build_live_attack_map(events_data: List[dict], max_points: int = 300) -> go.Figure:
+    """
+    Live attack map with pulsing markers sized by severity.
+    Shows real-time attack origins as glowing dots on a dark map.
+    Three concentric layers (outer glow, mid ring, core) simulate pulse effect.
+    """
+    if not events_data:
+        return _empty_fig("No live attack data — run ingestion to populate events")
+
+    rows = []
+    for e in events_data[:max_points]:
+        geo = e.get("source_geo")
+        if isinstance(geo, dict) and geo.get("latitude") and geo.get("longitude"):
+            sev_score = float(e.get("severity_score", 3.0))
+            rows.append({
+                "lat":         geo["latitude"],
+                "lon":         geo["longitude"],
+                "country":     geo.get("country", "Unknown"),
+                "attack_type": e.get("attack_type", "Unknown"),
+                "severity":    e.get("severity", "Low"),
+                "sev_score":   sev_score,
+                "ip":          e.get("source_ip", "—"),
+                "timestamp":   str(e.get("timestamp", ""))[:19].replace("T", " "),
+                "description": (e.get("description") or "")[:60],
+            })
+
+    if not rows:
+        return _empty_fig("No geo-tagged events. Run ingestion with GeoIP enrichment.")
+
+    df = pd.DataFrame(rows)
+
+    SEV_COLOR = {
+        "Critical": "#ff3355",
+        "High":     "#ff6b35",
+        "Medium":   "#ffd700",
+        "Low":      "#00ff88",
+        "Unknown":  "#00d4ff",
+    }
+
+    fig = go.Figure()
+
+    # Layer 1: outer glow (large, very transparent)
+    for sev, grp in df.groupby("severity"):
+        color = SEV_COLOR.get(sev, "#00d4ff")
+        fig.add_trace(go.Scattergeo(
+            lat         = grp["lat"],
+            lon         = grp["lon"],
+            mode        = "markers",
+            name        = f"{sev} (glow)",
+            showlegend  = False,
+            marker      = dict(
+                size    = (grp["sev_score"] / 10.0 * 28 + 14).clip(14, 42),
+                color   = color,
+                opacity = 0.08,
+                line    = dict(width=0),
+            ),
+        ))
+
+    # Layer 2: mid ring
+    for sev, grp in df.groupby("severity"):
+        color = SEV_COLOR.get(sev, "#00d4ff")
+        fig.add_trace(go.Scattergeo(
+            lat         = grp["lat"],
+            lon         = grp["lon"],
+            mode        = "markers",
+            name        = f"{sev} (ring)",
+            showlegend  = False,
+            marker      = dict(
+                size    = (grp["sev_score"] / 10.0 * 16 + 8).clip(8, 24),
+                color   = color,
+                opacity = 0.25,
+                line    = dict(width=0),
+            ),
+        ))
+
+    # Layer 3: core dot (with hover info + legend)
+    for sev, grp in df.groupby("severity"):
+        color = SEV_COLOR.get(sev, "#00d4ff")
+        fig.add_trace(go.Scattergeo(
+            lat         = grp["lat"],
+            lon         = grp["lon"],
+            mode        = "markers",
+            name        = sev,
+            marker      = dict(
+                size        = (grp["sev_score"] / 10.0 * 8 + 5).clip(5, 13),
+                color       = color,
+                opacity     = 0.9,
+                line        = dict(color="rgba(255,255,255,0.3)", width=0.5),
+            ),
+            customdata  = grp[["country", "attack_type", "sev_score", "ip", "timestamp", "description"]].values,
+            hovertemplate = (
+                "<b>%{customdata[0]}</b> · %{customdata[1]}<br>"
+                "Severity: %{customdata[2]:.1f} | IP: %{customdata[3]}<br>"
+                "<i>%{customdata[5]}</i><br>"
+                "%{customdata[4]}"
+                "<extra></extra>"
+            ),
+        ))
+
+    fig.update_geos(
+        showframe       = False,
+        showcoastlines  = True,
+        coastlinecolor  = "#0f3a5c",
+        showland        = True,
+        landcolor       = "#0a1a2a",
+        showocean       = True,
+        oceancolor      = "#050a0f",
+        showlakes       = False,
+        showcountries   = True,
+        countrycolor    = "#0f3a5c",
+        bgcolor         = "#050a0f",
+        projection_type = "natural earth",
+    )
+
+    fig.update_layout(
+        paper_bgcolor = "#050a0f",
+        legend = dict(
+            bgcolor     = "rgba(10,21,32,0.85)",
+            bordercolor = "#0f3a5c",
+            borderwidth = 1,
+            font        = dict(size=10, family=FONT_FAMILY, color=COLORS["text"]),
+            orientation = "h",
+            y           = -0.05,
+            title       = dict(text="Severity", font=dict(size=10, color=COLORS["muted"])),
+        ),
+        margin = dict(l=0, r=0, t=40, b=0),
+        title  = dict(
+            text    = f"⚡ Live Attack Map — {len(df)} Active Threats",
+            font    = dict(size=13, color="#ff3355", family=FONT_FAMILY),
+            x=0.01, xanchor="left",
+        ),
+    )
+
+    return fig
+
+
 def build_country_attack_bubble(events_data: List[dict], top_countries: int = 10) -> go.Figure:
     """
     Bubble chart: X = attack type, Y = country, bubble size = event count,
