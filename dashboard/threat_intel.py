@@ -83,14 +83,18 @@ def lookup_otx_domain(domain: str, api_key: str) -> dict:
 def get_otx_recent_pulses(api_key: str, limit: int = 10) -> list:
     """Fetch recent OTX threat pulses."""
     try:
-        r = requests.get(
-            "https://otx.alienvault.com/api/v1/pulses/subscribed",
-            headers={"X-OTX-API-KEY": api_key},
-            params={"limit": limit},
-            timeout=10,
-        )
-        if r.status_code == 200:
-            return r.json().get("results", [])
+        # Try subscribed first; fall back to recommended if empty (new/unfollowed accounts)
+        for endpoint in ("subscribed", "recommended"):
+            r = requests.get(
+                f"https://otx.alienvault.com/api/v1/pulses/{endpoint}",
+                headers={"X-OTX-API-KEY": api_key},
+                params={"limit": limit},
+                timeout=10,
+            )
+            if r.status_code == 200:
+                results = r.json().get("results", [])
+                if results:
+                    return results
     except Exception as e:
         logger.warning(f"OTX pulses fetch failed: {e}")
     return []
