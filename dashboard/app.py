@@ -558,12 +558,15 @@ app.layout = html.Div([
                 "minHeight":  "14px",
             }),
         ),
-    ], style={"padding": "0 24px 8px", "display": "flex", "flexDirection": "column"}),
+    ], style={"padding": "0 24px 4px", "display": "flex", "flexDirection": "column"}),
 
     # Tabs — all content pre-rendered so chart IDs always exist in the DOM
     # This ensures dropdown filter callbacks always find their output components
     dcc.Tabs(id="tabs", value="overview", mobile_breakpoint=0, style={
         "fontFamily": "Rajdhani, monospace",
+        "backgroundColor": "#050a0f",
+    }, content_style={
+        "padding": "12px 24px 0",
         "backgroundColor": "#050a0f",
     }, children=[
         dcc.Tab(label="Overview",  value="overview", style=_tab_style(), selected_style=_tab_selected_style(), children=tab_overview()),
