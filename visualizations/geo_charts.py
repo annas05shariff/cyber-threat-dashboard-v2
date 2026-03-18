@@ -326,17 +326,20 @@ def build_mitre_sunburst(mitre_data: List[dict]) -> go.Figure:
     tactic_list     = df["tactic"].unique().tolist()
     technique_labels= (df["technique_id"] + ": " + df["technique"].fillna("")).tolist()
 
+    tactic_sums = df.groupby("tactic")["count"].sum().reindex(tactic_list).tolist()
+    total_count = int(df["count"].sum())
+
     fig = go.Figure(go.Sunburst(
         labels  = ["ATT&CK"] + tactic_list + technique_labels,
         parents = [""] + ["ATT&CK"] * len(tactic_list) + df["tactic"].tolist(),
         values  = (
-            [0] +
-            df.groupby("tactic")["count"].sum().reindex(tactic_list).tolist() +
+            [total_count] +
+            tactic_sums +
             df["count"].tolist()
         ),
         marker  = dict(
             colors = (
-                ["rgba(0,0,0,0)"] +
+                [COLORS["panel"]] +
                 [TACTIC_COLORS.get(t, COLORS["Unknown"]) for t in tactic_list] +
                 [TACTIC_COLORS.get(t, COLORS["Unknown"]) for t in df["tactic"]]
             ),
