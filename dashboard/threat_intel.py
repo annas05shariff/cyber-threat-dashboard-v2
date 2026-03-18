@@ -153,43 +153,40 @@ def tab_threat_intel_layout() -> html.Div:
             ),
         ], style={**PANEL, "marginBottom": "16px"}),
 
-        # ── Row 2: Recent OTX Pulses + Top Reported IPs ──────────────────────
+        # ── Row 2: Recent OTX Pulses (full width) ───────────────────────────
         html.Div([
-            # OTX Pulses
             html.Div([
-                html.Div([
-                    html.Span("Recent OTX Threat Pulses", style={
-                        **RAJDHANI, "fontSize": "14px", "fontWeight": "700",
-                        "color": "#00d4ff", "letterSpacing": "1px",
-                    }),
-                    html.Button("↺ Refresh", id="btn-refresh-pulses", n_clicks=0, style={
-                        "backgroundColor": "transparent", "color": "#527a99",
-                        "border": "1px solid #0f3a5c", "borderRadius": "4px",
-                        "padding": "3px 10px", **MONO, "fontSize": "10px",
-                        "cursor": "pointer", "marginLeft": "auto",
-                    }),
-                ], style={"display": "flex", "alignItems": "center", "marginBottom": "12px"}),
-
-                dcc.Loading(
-                    type="dot", color="#00d4ff",
-                    children=html.Div(id="otx-pulses-container", style={
-                        "maxHeight": "380px", "overflowY": "auto",
-                    }),
-                ),
-            ], style={**PANEL, "flex": "3"}),
-
-            # Top Reported IPs
-            html.Div([
-                html.Div("Top Reported IPs", style={
+                html.Span("Recent OTX Threat Pulses", style={
                     **RAJDHANI, "fontSize": "14px", "fontWeight": "700",
-                    "color": "#00d4ff", "letterSpacing": "1px", "marginBottom": "12px",
+                    "color": "#00d4ff", "letterSpacing": "1px",
                 }),
-                html.Div(id="top-ips-container", style={
-                    "maxHeight": "380px", "overflowY": "auto",
+                html.Button("↺ Refresh", id="btn-refresh-pulses", n_clicks=0, style={
+                    "backgroundColor": "transparent", "color": "#527a99",
+                    "border": "1px solid #0f3a5c", "borderRadius": "4px",
+                    "padding": "3px 10px", **MONO, "fontSize": "10px",
+                    "cursor": "pointer", "marginLeft": "auto",
                 }),
-            ], style={**PANEL, "flex": "2"}),
+            ], style={"display": "flex", "alignItems": "center", "marginBottom": "12px"}),
+            dcc.Loading(
+                type="dot", color="#00d4ff",
+                children=html.Div(id="otx-pulses-container", style={
+                    "maxHeight": "280px", "overflowY": "auto",
+                }),
+            ),
+        ], style={**PANEL, "marginBottom": "16px"}),
 
-        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
+        # ── Row 3: Top Reported IPs (grid of cards) ──────────────────────────
+        html.Div([
+            html.Div("Top Reported IPs", style={
+                **RAJDHANI, "fontSize": "14px", "fontWeight": "700",
+                "color": "#00d4ff", "letterSpacing": "1px", "marginBottom": "12px",
+            }),
+            html.Div(id="top-ips-container", style={
+                "display": "grid",
+                "gridTemplateColumns": "repeat(auto-fill, minmax(200px, 1fr))",
+                "gap": "10px",
+            }),
+        ], style={**PANEL, "marginBottom": "16px"}),
 
         # Hidden store for pulse refresh trigger
         dcc.Store(id="store-pulse-trigger", data=0),
@@ -320,23 +317,30 @@ def render_top_ips(ip_data: list) -> list:
         count = d.get("count", 0)
         country = d.get("country", "—")
         pct = count / max_count
+        bar_color = "#ff3355" if pct > 0.75 else "#ff6b35" if pct > 0.4 else "#00d4ff"
 
         items.append(html.Div([
             html.Div([
-                html.Span(f"{i:02d}. ", style={**MONO, "fontSize": "9px", "color": "#355a7a"}),
-                html.Span(ip, style={**MONO, "fontSize": "11px", "color": "#00d4ff"}),
-                html.Span(f" {count}", style={**MONO, "fontSize": "10px", "color": "#ffd700", "marginLeft": "auto"}),
-            ], style={"display": "flex", "alignItems": "center", "marginBottom": "3px"}),
-            html.Div([
-                html.Span(country, style={**MONO, "fontSize": "9px", "color": "#527a99"}),
-            ], style={"marginBottom": "4px"}),
-            html.Div(style={
-                "height": "2px",
-                "width": f"{int(pct * 100)}%",
-                "backgroundColor": "#ff3355" if pct > 0.75 else "#ff6b35" if pct > 0.4 else "#00d4ff",
-                "borderRadius": "1px",
-                "marginBottom": "8px",
+                html.Span(f"#{i:02d}", style={**MONO, "fontSize": "9px", "color": "#355a7a"}),
+                html.Span(f"{count:,}", style={
+                    **MONO, "fontSize": "10px", "color": "#ffd700",
+                    "marginLeft": "auto", "fontWeight": "700",
+                }),
+            ], style={"display": "flex", "alignItems": "center", "marginBottom": "6px"}),
+            html.Div(ip, style={
+                **MONO, "fontSize": "11px", "color": "#00d4ff",
+                "marginBottom": "4px", "wordBreak": "break-all",
             }),
-        ]))
+            html.Div(country, style={**MONO, "fontSize": "9px", "color": "#527a99", "marginBottom": "8px"}),
+            html.Div(style={
+                "height": "3px", "width": f"{int(pct * 100)}%",
+                "backgroundColor": bar_color, "borderRadius": "2px",
+            }),
+        ], style={
+            "backgroundColor": "rgba(0,0,0,0.3)",
+            "border": f"1px solid {bar_color}33",
+            "borderTop": f"2px solid {bar_color}",
+            "borderRadius": "6px", "padding": "10px 12px",
+        }))
 
     return items
