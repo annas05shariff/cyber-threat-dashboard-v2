@@ -896,8 +896,9 @@ def ioc_lookup(n_clicks, indicator):
     prevent_initial_call=False,
 )
 def update_otx_pulses(n_clicks, n_intervals):
-    from config.settings import OTX_API_KEY
-    pulses = get_otx_recent_pulses(OTX_API_KEY, limit=10) if OTX_API_KEY else []
+    import os
+    key = os.getenv("OTX_API_KEY", "")
+    pulses = get_otx_recent_pulses(key, limit=10)
     return render_otx_pulses(pulses)
 
 
